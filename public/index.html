@@ -80,6 +80,21 @@ button.chip:hover { border-color: var(--accent); }
 .online .av { margin-left: -6px; border: 2px solid var(--bg); }
 .online .av:first-child { margin-left: 0; }
 
+/* online people list, opened from the online chip */
+.people { position: relative; }
+
+.pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 20;
+  width: max-content; min-width: 220px; max-width: min(320px, calc(100vw - 32px)); max-height: 60vh; overflow: auto;
+  padding: 6px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+}
+.pop .head { padding: 6px 10px 4px; color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.pop .person { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; font-size: 14px; }
+.pop .person:hover { background: var(--bg); }
+.pop .person .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pop .none { padding: 10px; color: var(--muted); font-size: 14px; }
+
 .status { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
 .status.off { background: var(--danger); }
 
@@ -266,9 +281,12 @@ body.dragging .drop { border-color: var(--accent); background: var(--accent-soft
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
     </button>
 
-    <div class="chip">
-      <div class="online" id="online"></div>
-      <span class="muted" id="onlineCount">Connecting…</span>
+    <div class="people">
+      <button class="chip" id="peopleBtn" aria-haspopup="true" aria-expanded="false" aria-controls="peopleList" title="See who is online">
+        <div class="online" id="online"></div>
+        <span class="muted" id="onlineCount">Connecting…</span>
+      </button>
+      <div class="pop" id="peopleList" hidden></div>
     </div>
 
     <label class="chip" id="me" title="This is your name. Click to change it.">
@@ -647,6 +665,50 @@ $('#list').addEventListener('click', e => {
   fetch(url, { method: 'DELETE' }).then(r => { if (!r.ok) toast('Could not delete (already gone?)'); });
 });
 
+// ---------- online people list ----------
+
+let people = []; // [{ id, name }] from the latest presence event
+
+const peopleBtn = $('#peopleBtn');
+const peopleList = $('#peopleList');
+
+// you first, then everyone else alphabetically
+function renderPeople() {
+  const sorted = [...people].sort((a, b) => (b.id === cid) - (a.id === cid) || a.name.localeCompare(b.name));
+
+  const rows = sorted.map(p => `
+    <div class="person">
+      ${avatar(p.name)}
+      <span class="nm">${esc(p.name)}</span>
+      ${p.id === cid ? '<span class="tag">YOU</span>' : ''}
+    </div>`).join('');
+
+  peopleList.innerHTML = `<div class="head">Online now</div>${rows || '<div class="none">Nobody connected</div>'}`;
+}
+
+function setPeopleOpen(open) {
+  peopleList.hidden = !open;
+  peopleBtn.setAttribute('aria-expanded', open);
+  if (!open) return;
+
+  // the list hangs from the chip's right edge; on narrow screens shift it back inside the 16px gutters
+  peopleList.style.transform = '';
+  const r = peopleList.getBoundingClientRect();
+  const shift = Math.max(16 - r.left, 0) - Math.max(r.right - (innerWidth - 16), 0);
+  peopleList.style.transform = `translateX(${shift}px)`;
+}
+
+peopleBtn.onclick = e => {
+  e.stopPropagation();
+  setPeopleOpen(peopleList.hidden);
+};
+
+// clicking anywhere outside or pressing Escape closes it
+document.addEventListener('click', e => { if (!e.target.closest('.people')) setPeopleOpen(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setPeopleOpen(false); });
+
+renderPeople();
+
 // ---------- live updates (Server-Sent Events) ----------
 
 let events = null;
@@ -660,8 +722,10 @@ function connect() {
   // server unreachable: say so instead of leaving an empty online chip; EventSource retries by itself
   events.onerror = () => {
     $('#dot').classList.add('off');
+    people = [];
     $('#online').innerHTML = '';
     $('#onlineCount').textContent = 'Offline, retrying…';
+    renderPeople();
   };
 
   // full list: sent on connect and after renames
@@ -694,9 +758,10 @@ function connect() {
   });
 
   events.addEventListener('presence', e => {
-    const people = JSON.parse(e.data);
+    people = JSON.parse(e.data);
     $('#online').innerHTML = people.slice(0, 5).map(p => avatar(p.name)).join('');
     $('#onlineCount').textContent = `${people.length} online`;
+    renderPeople();
   });
 }
 
