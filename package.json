@@ -1,0 +1,9 @@
+{
+  "name": "ferry",
+  "version": "1.0.0",
+  "description": "Share files and folders with every device on your local network. Zero dependencies.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=20.15" },
+  "license": "MIT"
+}
